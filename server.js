@@ -8,6 +8,12 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
+// Default route for testing
+app.get('/', (req, res) => {
+    res.send('Server is running. Use POST /api/generate to interact with OpenAI.');
+});
+
+// OpenAI API endpoint
 app.post('/api/generate', async (req, res) => {
     const { prompt } = req.body;
 
@@ -21,7 +27,7 @@ app.post('/api/generate', async (req, res) => {
             },
             {
                 headers: {
-                    Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, // API key securely stored in an environment variable
+                    Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
                 }
             }
         );
