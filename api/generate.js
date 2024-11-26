@@ -6,9 +6,13 @@ const axios = require('axios');
 const app = express();
 
 const corsOptions = {
-    origin: 'https://gbninon.github.io/kids-recipe-picker/', 
+    origin: [
+        'https://gbninon.github.io/kids-recipe-picker/', // GitHub Pages
+        'http://localhost:3000', // Local testing (optional)
+    ],
     methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type'],
+    allowedHeaders: ['Content-Type', 'Authorization'], // Add 'Authorization'
+    credentials: true, // Optional: for cookies or tokens
 };
 
 app.use(cors(corsOptions));
