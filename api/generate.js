@@ -5,28 +5,18 @@ const axios = require('axios');
 
 const app = express();
 
-// CORS configuration
 const corsOptions = {
-    origin: [
-        'https://gbninon.github.io/kids-recipe-picker', // GitHub Pages
-        'http://localhost:3000', // Local testing (optional)
-    ],
-    methods: ['GET', 'POST'],
-    allowedHeaders: [
-        'Content-Type',
-        'Authorization', // Include this for API authorization headers
-        'Access-Control-Allow-Headers', // Allow additional headers if needed
-        credentials: true,
-    ],
+    origin: ['https://gbninon.github.io'], // Allowed origin
+    methods: ['GET', 'POST', 'OPTIONS'], // Allowed HTTP methods
+    allowedHeaders: ['Content-Type', 'Authorization'], // Allowed headers
+    credentials: true, // Allow credentials like cookies or Authorization headers
 };
 
-app.use(cors(corsOptions));
+app.use(cors(corsOptions)); // Apply CORS middleware
+app.options('*', cors(corsOptions)); // Handle preflight requests
 app.use(bodyParser.json());
 
-// Handle preflight (OPTIONS) requests
-app.options('*', cors(corsOptions));
-
-// Default route (optional, for testing server status)
+// Default route (optional, for testing if the server is running)
 app.get('/', (req, res) => {
     res.send('Server is running. Use POST /api/generate to interact with OpenAI.');
 });
@@ -47,12 +37,12 @@ app.post('/api/generate', async (req, res) => {
             {
                 headers: {
                     'Content-Type': 'application/json',
-                    Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, // Secure environment variable
+                    Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, // Use the environment variable
                 },
             }
         );
 
-        // Send the OpenAI response back to the client
+        // Send the response back to the frontend
         res.status(200).json(response.data);
     } catch (error) {
         console.error('Error calling OpenAI API:', error.response?.data || error.message);
@@ -62,5 +52,5 @@ app.post('/api/generate', async (req, res) => {
     }
 });
 
-// Export app for deployment
+// Export the handler for Vercel
 module.exports = app;
