@@ -16,6 +16,7 @@ const corsOptions = {
         'Content-Type',
         'Authorization', // Include this for API authorization headers
         'Access-Control-Allow-Headers', // Allow additional headers if needed
+        credentials: true,
     ],
 };
 
