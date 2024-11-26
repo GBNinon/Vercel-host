@@ -5,8 +5,13 @@ const axios = require('axios');
 
 const app = express();
 
-// Middleware
-app.use(cors());
+const corsOptions = {
+    origin: 'https://gbninon.github.io/kids-recipe-picker/', 
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type'],
+};
+
+app.use(cors(corsOptions));
 app.use(bodyParser.json());
 
 // Default route (optional, for testing if the server is running)
