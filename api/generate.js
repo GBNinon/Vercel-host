@@ -5,23 +5,27 @@ const axios = require('axios');
 
 const app = express();
 
+// CORS configuration
 const corsOptions = {
     origin: [
         'https://gbninon.github.io/kids-recipe-picker', // GitHub Pages
         'http://localhost:3000', // Local testing (optional)
     ],
     methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Access-Control-Allow-Headers'], // Include all necessary headers
+    allowedHeaders: [
+        'Content-Type',
+        'Authorization', // Include this for API authorization headers
+        'Access-Control-Allow-Headers', // Allow additional headers if needed
+    ],
 };
 
 app.use(cors(corsOptions));
 app.use(bodyParser.json());
 
-// Preflight request handling
+// Handle preflight (OPTIONS) requests
 app.options('*', cors(corsOptions));
-app.use(bodyParser.json());
 
-// Default route (optional, for testing if the server is running)
+// Default route (optional, for testing server status)
 app.get('/', (req, res) => {
     res.send('Server is running. Use POST /api/generate to interact with OpenAI.');
 });
@@ -42,12 +46,12 @@ app.post('/api/generate', async (req, res) => {
             {
                 headers: {
                     'Content-Type': 'application/json',
-                    Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, // Use the environment variable
+                    Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, // Secure environment variable
                 },
             }
         );
 
-        // Send the response back to the frontend
+        // Send the OpenAI response back to the client
         res.status(200).json(response.data);
     } catch (error) {
         console.error('Error calling OpenAI API:', error.response?.data || error.message);
@@ -57,5 +61,5 @@ app.post('/api/generate', async (req, res) => {
     }
 });
 
-// Export the handler for Vercel
+// Export app for deployment
 module.exports = app;
