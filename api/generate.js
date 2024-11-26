@@ -6,7 +6,7 @@ const axios = require('axios');
 const app = express();
 
 const corsOptions = {
-    origin: ['https://gbninon.github.io'], // Allowed origin
+    origin: ['https://gbninon.github.io'], // Allowed origin for your GitHub Pages
     methods: ['GET', 'POST', 'OPTIONS'], // Allowed HTTP methods
     allowedHeaders: ['Content-Type', 'Authorization'], // Allowed headers
     credentials: true, // Allow credentials like cookies or Authorization headers
@@ -25,19 +25,24 @@ app.get('/', (req, res) => {
 app.post('/api/generate', async (req, res) => {
     const { prompt } = req.body;
 
+    // Validate prompt
+    if (!prompt || prompt.trim() === '') {
+        return res.status(400).json({ error: 'Prompt cannot be empty.' });
+    }
+
     try {
         // Call OpenAI API
         const response = await axios.post(
-            'https://api.openai.com/v1/chat/completions', // Endpoint for chat models
+            'https://api.openai.com/v1/chat/completions',
             {
-                model: 'gpt-4o', // Use the latest version of GPT-4
-                messages: [{ role: 'user', content: prompt }], // Updated format for chat models
+                model: 'gpt-4',
+                messages: [{ role: 'user', content: prompt }],
                 max_tokens: 150,
             },
             {
                 headers: {
                     'Content-Type': 'application/json',
-                    Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, // Use the environment variable
+                    Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, // Use the environment variable for the API key
                 },
             }
         );
@@ -46,9 +51,7 @@ app.post('/api/generate', async (req, res) => {
         res.status(200).json(response.data);
     } catch (error) {
         console.error('Error calling OpenAI API:', error.response?.data || error.message);
-        res.status(500).json({
-            error: error.response?.data || error.message || 'Failed to fetch response from OpenAI.',
-        });
+        res.status(500).json({ error: 'Failed to fetch response from OpenAI.' });
     }
 });
 
