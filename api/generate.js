@@ -7,15 +7,18 @@ const app = express();
 
 const corsOptions = {
     origin: [
-        'https://gbninon.github.io/kids-recipe-picker/', // GitHub Pages
+        'https://gbninon.github.io/kids-recipe-picker', // GitHub Pages
         'http://localhost:3000', // Local testing (optional)
     ],
     methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type', 'Authorization'], // Add 'Authorization'
-    credentials: true, // Optional: for cookies or tokens
+    allowedHeaders: ['Content-Type', 'Authorization', 'Access-Control-Allow-Headers'], // Include all necessary headers
 };
 
 app.use(cors(corsOptions));
+app.use(bodyParser.json());
+
+// Preflight request handling
+app.options('*', cors(corsOptions));
 app.use(bodyParser.json());
 
 // Default route (optional, for testing if the server is running)
