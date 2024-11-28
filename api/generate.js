@@ -5,6 +5,7 @@ const axios = require('axios');
 
 const app = express();
 
+// CORS configuration
 const corsOptions = {
     origin: ['https://gbninon.github.io'], // Allowed origin for your GitHub Pages
     methods: ['GET', 'POST', 'OPTIONS'], // Allowed HTTP methods
@@ -31,11 +32,11 @@ app.post('/api/generate', async (req, res) => {
     }
 
     try {
-        // Call OpenAI API
+        // Call OpenAI API with GPT-3.5 Turbo model
         const response = await axios.post(
             'https://api.openai.com/v1/chat/completions',
             {
-                model: 'gpt-3.5-turbo',
+                model: 'gpt-3.5-turbo', // Ensure to use the correct model name
                 messages: [{ role: 'user', content: prompt }],
                 max_tokens: 300,
             },
