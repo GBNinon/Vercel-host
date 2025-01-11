@@ -27,9 +27,9 @@ app.post('/api/generate', async (req, res) => {
         const response = await axios.post(
             'https://api.openai.com/v1/chat/completions',
             {
-                model: 'gpt-3.5-turbo',
+                model: 'gpt-4o-mini', // Updated model name
                 messages: [{ role: 'user', content: prompt }],
-                max_tokens: 300,
+                max_tokens: 3000, // Updated max tokens
             },
             {
                 headers: {
