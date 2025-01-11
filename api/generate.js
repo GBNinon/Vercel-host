@@ -14,7 +14,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
-app.use(bodyParser.json());
+app.use(cors({ origin: '*' }));
 
 app.post('/api/generate', async (req, res) => {
     const { prompt } = req.body;
