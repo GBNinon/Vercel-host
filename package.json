@@ -1,11 +1,14 @@
 {
-    "name": "backend",
-    "version": "1.0.0",
-    "scripts": {},
-    "dependencies": {
-        "axios": "^1.4.0",
-        "body-parser": "^1.20.2",
-        "cors": "^2.8.5",
-        "express": "^4.18.2"
-    }
+  "name": "backend",
+  "version": "1.0.0",
+  "scripts": {
+    // No need for "start" or anything if you're purely using Vercel,
+    // but you could add it if you want to run locally: "start": "node generate.js"
+  },
+  "dependencies": {
+    "axios": "^1.4.0",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  }
 }
