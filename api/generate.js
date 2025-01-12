@@ -8,7 +8,7 @@ const app = express();
 
 // CORS config to allow calls from GitHub Pages domain
 const corsOptions = {
-  origin: ['https://gbninon.github.io'], // or "*" if you want to allow all
+  origin: ['https://gbninon.github.io', 'https://gbninon.github.io/kids-recipe-picker'], // or "*" if you want to allow all
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
@@ -30,7 +30,7 @@ app.post('/api/generate', async (req, res) => {
       'https://api.openai.com/v1/chat/completions',
       {
         // If your doc says the model name is indeed 'gpt-4o-mini', keep it here
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 1000,
       },
@@ -58,6 +58,4 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
-// ❌ DO NOT CALL app.listen(...) in a Vercel serverless function
-// export the express app
 module.exports = app;
