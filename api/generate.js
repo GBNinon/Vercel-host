@@ -14,7 +14,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
-app.use(cors({ origin: '*' }));
+app.use(bodyParser.json());
 
 app.post('/api/generate', async (req, res) => {
     const { prompt } = req.body;
@@ -55,6 +55,11 @@ app.post('/api/generate', async (req, res) => {
             res.status(500).json({ error: 'Error setting up OpenAI API request.' });
         }
     }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 });
 
 module.exports = app;
