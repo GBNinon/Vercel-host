@@ -19,15 +19,25 @@ function runMulter(req, res) {
   });
 }
 
-const FRIDGE_SCAN_PROMPT = `You are FooddAI, a friendly assistant that helps families cook.
-Task: Look at this fridge/food photo and list visible food ingredients.
+const FRIDGE_SCAN_PROMPT = `You are FooddAI, a helpful assistant for family cooking.
+Task: Carefully examine this fridge photo and identify ALL visible food ingredients.
+
+LOOK CAREFULLY AT:
+- Every shelf from top to bottom
+- Door shelves
+- Drawers (vegetables, fruits)
+- Packaged items (read labels if visible)
+- Fresh produce, meats, dairy
+- Jars, bottles, containers
 
 Rules:
-- Return ONLY valid JSON (no markdown, no code blocks, no extra text)
-- JSON format: {"ingredients": ["Eggs", "Milk", "Cheese", ...], "notes": "optional note"}
-- Use simple grocery words kids understand
-- Max 20 most useful cooking ingredients
-- If unclear: {"ingredients": [], "notes": "Could not identify ingredients"}`;
+- Return ONLY valid JSON (no markdown, no code blocks)
+- Format: {"ingredients": ["item1", "item2", ...], "notes": ""}
+- Use simple ingredient names kids understand
+- Be specific: "Broccoli" not "green vegetable"
+- Include up to 25 ingredients, prioritize cooking ingredients
+- Skip non-food items and drinks (except milk)
+- If image is unclear: {"ingredients": [], "notes": "Could not identify ingredients"}`;
 
 module.exports = async function handler(req, res) {
   // CORS headers
@@ -68,13 +78,13 @@ module.exports = async function handler(req, res) {
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'List the food ingredients you see:' },
-              { type: 'image_url', image_url: { url: dataUrl, detail: 'low' } },
+              { type: 'text', text: 'Look at every shelf and drawer in this fridge. List all the food ingredients you can identify:' },
+              { type: 'image_url', image_url: { url: dataUrl, detail: 'auto' } },
             ],
           },
         ],
-        max_tokens: 300,
-        temperature: 0.2,
+        max_tokens: 400,
+        temperature: 0.3,
       },
       {
         headers: {
