@@ -72,19 +72,19 @@ module.exports = async function handler(req, res) {
     const response = await axios.post(
       'https://api.openai.com/v1/chat/completions',
       {
-        model: 'gpt-4o-mini',
+        model: 'gpt-5.6-luna',
         messages: [
           { role: 'system', content: FRIDGE_SCAN_PROMPT },
           {
             role: 'user',
             content: [
               { type: 'text', text: 'Look at every shelf and drawer in this fridge. List all the food ingredients you can identify:' },
-              { type: 'image_url', image_url: { url: dataUrl, detail: 'auto' } },
+              { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
             ],
           },
         ],
-        max_tokens: 400,
-        temperature: 0.3,
+        max_completion_tokens: 800,
+        response_format: { type: 'json_object' },
       },
       {
         headers: {
