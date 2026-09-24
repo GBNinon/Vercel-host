@@ -1,7 +1,9 @@
 // api/fridge-scan.js
-// Vercel Serverless Function for fridge photo scanning
+// Vercel Serverless Function for fridge photo scanning.
+// v2 (Sep 2026): sure list + "maybe" list, optional zoomed tiles, Dutch names, no 25-item cap.
 const multer = require('multer');
 const axios = require('axios');
+const { takeQuota, giveBack, limitReply } = require('./_quota');
 
 // Configure multer for memory storage
 const upload = multer({
@@ -12,38 +14,64 @@ const upload = multer({
 // Helper to run multer as promise
 function runMulter(req, res) {
   return new Promise((resolve, reject) => {
-    upload.single('image')(req, res, (err) => {
+    // 'image' = the whole photo; tile0..tile3 = optional zoomed quarters (app v1.1+)
+    upload.fields([
+      { name: 'image', maxCount: 1 },
+      { name: 'tile0', maxCount: 1 }, { name: 'tile1', maxCount: 1 },
+      { name: 'tile2', maxCount: 1 }, { name: 'tile3', maxCount: 1 },
+    ])(req, res, (err) => {
       if (err) reject(err);
       else resolve();
     });
   });
 }
 
-const FRIDGE_SCAN_PROMPT = `You are FooddAI, a helpful assistant for family cooking.
-Task: Carefully examine this fridge photo and identify ALL visible food ingredients.
+const FRIDGE_SCAN_PROMPT = `You are FoodAI, the fridge helper of a family app.
+You get one photo of a fridge (or pantry or kitchen counter). Sometimes 4 zoomed-in quarters of the SAME photo follow (top-left, top-right, bottom-left, bottom-right). Use the quarters to read small items and labels. They show the same fridge, so never list an item twice.
 
-LOOK CAREFULLY AT:
-- Every shelf from top to bottom
-- Door shelves
-- Drawers (vegetables, fruits)
-- Packaged items (read labels if visible)
-- Fresh produce, meats, dairy
-- Jars, bottles, containers
+Goal: list every FOOD item a parent could cook with or give to the kids.
+
+Make two lists:
+- "ingredients": items you can clearly see and identify.
+- "maybe": items you think you see but are not sure of (partly hidden, blurry, label hard to read). Max 10. Use your best guess name.
 
 Rules:
-- Return ONLY valid JSON (no markdown, no code blocks)
-- Format: {"ingredients": ["item1", "item2", ...], "notes": ""}
-- Use simple ingredient names kids understand
-- Be specific: "Broccoli" not "green vegetable"
-- Include up to 25 ingredients, prioritize cooking ingredients
-- Skip non-food items and drinks (except milk)
-- If image is unclear: {"ingredients": [], "notes": "Could not identify ingredients"}`;
+- Only list what is visible in THIS photo. Never add items just because fridges usually have them. If you cannot see it, leave it out.
+- Food only: fruit, vegetables, herbs, dairy, eggs, meat, fish, bread, leftovers you can identify, sauces, spreads, condiments, jars, pickles.
+- Drinks: only milk, plant milk and yogurt drinks. Skip water, juice, soft drinks and alcohol.
+- Skip non-food and trivia: packaging, wrappers, paper, bags, foil, empty or closed containers you cannot identify, medicine, cosmetics, fridge parts, magnets, toys.
+- Be specific and simple: "Cherry tomatoes", "Greek yogurt", "Grated cheese", not "vegetables" or "dairy".
+- Merge duplicates: three yogurt pots is one "Yogurt".
+- No quantities, no brand names ("Chocolate spread", not the brand).
+- No limit on the number of items, but never pad the list.
+- If the message says LANGUAGE:nl, write every name in Dutch with a capital first letter ("Kerstomaatjes", "Griekse yoghurt", "Geraspte kaas"). Otherwise English.
+
+Return ONLY valid JSON: {"ingredients":["..."],"maybe":["..."],"notes":""}
+"notes": one short sentence only when the photo is too dark or blurry, otherwise "".`;
+
+function toDataUrl(file) {
+  const mime = file.mimetype || 'image/jpeg';
+  return `data:${mime};base64,${file.buffer.toString('base64')}`;
+}
+
+function cleanList(arr, max) {
+  const seen = new Set();
+  const out = [];
+  (Array.isArray(arr) ? arr : []).forEach((x) => {
+    const name = String(x || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) return;
+    seen.add(key);
+    out.push(name);
+  });
+  return out.slice(0, max);
+}
 
 module.exports = async function handler(req, res) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Device-Id');
 
   // Handle preflight
   if (req.method === 'OPTIONS') {
@@ -55,18 +83,36 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed. Use POST with image.' });
   }
 
+  let counted = false;
   try {
     // Parse multipart form data
     await runMulter(req, res);
 
-    if (!req.file || !req.file.buffer) {
+    const files = req.files || {};
+    const main = files.image && files.image[0];
+    if (!main || !main.buffer) {
       return res.status(400).json({ error: 'No image received. Upload an image field named "image".' });
     }
 
-    // Convert to base64
-    const mime = req.file.mimetype || 'image/jpeg';
-    const base64 = req.file.buffer.toString('base64');
-    const dataUrl = `data:${mime};base64,${base64}`;
+    // Daily / monthly limit per member (see _quota.js)
+    const q = await takeQuota(req, 'fridge_scan');
+    if (!q.allowed) return limitReply(res, q);
+    counted = true;
+
+    const lang = (req.body && req.body.lang === 'nl') ? 'nl' : 'en';
+    const tiles = ['tile0', 'tile1', 'tile2', 'tile3']
+      .map((k) => files[k] && files[k][0])
+      .filter((f) => f && f.buffer);
+
+    const content = [
+      { type: 'text', text: 'LANGUAGE:' + lang + '\nThe whole fridge photo:' },
+      { type: 'image_url', image_url: { url: toDataUrl(main), detail: 'high' } },
+    ];
+    if (tiles.length) {
+      content.push({ type: 'text', text: 'Zoomed-in quarters of the same photo (top-left, top-right, bottom-left, bottom-right):' });
+      tiles.forEach((t) => content.push({ type: 'image_url', image_url: { url: toDataUrl(t), detail: 'high' } }));
+    }
+    content.push({ type: 'text', text: 'List the food you can see. Sure items in "ingredients", unsure items in "maybe".' });
 
     // Call OpenAI Vision API
     const response = await axios.post(
@@ -75,15 +121,9 @@ module.exports = async function handler(req, res) {
         model: 'gpt-5.6-luna',
         messages: [
           { role: 'system', content: FRIDGE_SCAN_PROMPT },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: 'Look at every shelf and drawer in this fridge. List all the food ingredients you can identify:' },
-              { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
-            ],
-          },
+          { role: 'user', content },
         ],
-        max_completion_tokens: 800,
+        max_completion_tokens: 2500,
         response_format: { type: 'json_object' },
       },
       {
@@ -91,7 +131,7 @@ module.exports = async function handler(req, res) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         },
-        timeout: 30000,
+        timeout: 55000,
       }
     );
 
@@ -111,12 +151,16 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    const ingredients = Array.isArray(parsed.ingredients) ? parsed.ingredients : [];
+    const ingredients = cleanList(parsed.ingredients, 60);
+    const sureKeys = new Set(ingredients.map((x) => x.toLowerCase()));
+    const maybe = cleanList(parsed.maybe, 10).filter((x) => !sureKeys.has(x.toLowerCase()));
     const notes = typeof parsed.notes === 'string' ? parsed.notes : '';
 
-    return res.status(200).json({ ingredients, notes });
+    // "maybe" is new: older app versions simply ignore it.
+    return res.status(200).json({ ingredients, maybe, notes });
 
   } catch (error) {
+    if (counted) await giveBack(req, 'fridge_scan');
     console.error('Fridge scan error:', error?.response?.data || error.message);
     const msg = error?.response?.data?.error?.message || error.message || 'Scan failed';
     return res.status(500).json({ error: msg });
