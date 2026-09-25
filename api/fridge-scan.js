@@ -1,6 +1,13 @@
 // api/fridge-scan.js
 // Vercel Serverless Function for fridge photo scanning.
 // v2 (Sep 2026): sure list + "maybe" list, optional zoomed tiles, Dutch names, no 25-item cap.
+// v3 (Sep 2026): gpt-6-luna without reasoning (faster), whole photo at low detail, zoomed tiles at high detail.
+
+// v4 (Sep 2026): strict JSON schema (Structured Outputs) instead of plain JSON mode.
+
+// Change here if the scan misses too much: 'none' (fastest) -> 'low' -> 'medium'
+const MODEL = 'gpt-6-luna';
+const REASONING = 'none';
 const multer = require('multer');
 const axios = require('axios');
 const { takeQuota, giveBack, limitReply } = require('./_quota');
@@ -48,6 +55,25 @@ Rules:
 
 Return ONLY valid JSON: {"ingredients":["..."],"maybe":["..."],"notes":""}
 "notes": one short sentence only when the photo is too dark or blurry, otherwise "".`;
+
+// Structured Outputs: the model must return exactly this shape.
+const SCAN_SCHEMA = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'fridge_scan',
+    strict: true,
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['ingredients', 'maybe', 'notes'],
+      properties: {
+        ingredients: { type: 'array', items: { type: 'string' } },
+        maybe: { type: 'array', items: { type: 'string' } },
+        notes: { type: 'string' },
+      },
+    },
+  },
+};
 
 function toDataUrl(file) {
   const mime = file.mimetype || 'image/jpeg';
@@ -106,7 +132,9 @@ module.exports = async function handler(req, res) {
 
     const content = [
       { type: 'text', text: 'LANGUAGE:' + lang + '\nThe whole fridge photo:' },
-      { type: 'image_url', image_url: { url: toDataUrl(main), detail: 'high' } },
+      // With tiles the whole photo is only for orientation, so low detail is enough.
+      // Old app versions send no tiles: then the whole photo stays at high detail.
+      { type: 'image_url', image_url: { url: toDataUrl(main), detail: tiles.length ? 'low' : 'high' } },
     ];
     if (tiles.length) {
       content.push({ type: 'text', text: 'Zoomed-in quarters of the same photo (top-left, top-right, bottom-left, bottom-right):' });
@@ -118,13 +146,14 @@ module.exports = async function handler(req, res) {
     const response = await axios.post(
       'https://api.openai.com/v1/chat/completions',
       {
-        model: 'gpt-5.6-luna',
+        model: MODEL,
+        reasoning_effort: REASONING,
         messages: [
           { role: 'system', content: FRIDGE_SCAN_PROMPT },
           { role: 'user', content },
         ],
         max_completion_tokens: 2500,
-        response_format: { type: 'json_object' },
+        response_format: SCAN_SCHEMA,
       },
       {
         headers: {
