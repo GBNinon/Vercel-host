@@ -1,6 +1,7 @@
 // api/_quota.js
 // Shared helper (the underscore means Vercel does NOT turn this into its own URL).
 // Daily and monthly AI limits per member, counted in Supabase (project qcz, table ams_ai_usage).
+// Refunds need a one-time ticket that only this server sees (Supabase table ams_ai_tickets).
 // Limits live in the Supabase function ai_quota_limits:
 //   fridge_scan 3 a day / 30 a month, recipes 5 / 40, recipe_photo 5 / 40.
 // No new secret needed: this uses the PUBLIC anon key (the same one inside the app)
@@ -17,11 +18,11 @@ function who(req) {
   return { token, device };
 }
 
-async function rpc(fn, req, kind) {
-  const { token, device } = who(req);
+async function rpc(fn, req, body) {
+  const { token } = who(req);
   const r = await axios.post(
     SUPABASE_URL + '/rest/v1/rpc/' + fn,
-    { p_kind: kind, p_device: device || null },
+    body,
     {
       headers: {
         apikey: SUPABASE_ANON,
@@ -43,20 +44,29 @@ async function takeQuota(req, kind) {
     return process.env.AI_REQUIRE_ID === '1' ? { allowed: false, reason: 'id' } : { allowed: true };
   }
   try {
-    let r = await rpc('ai_quota_take', req, kind);
+    const body = { p_kind: kind, p_device: device || null };
+    let r = await rpc('ai_quota_take', req, body);
     if (r.status === 401 && token) {
       // expired login token: count on the device instead
       req.headers['authorization'] = '';
-      r = await rpc('ai_quota_take', req, kind);
+      r = await rpc('ai_quota_take', req, body);
     }
-    if (r.status >= 200 && r.status < 300 && r.data && typeof r.data.allowed === 'boolean') return r.data;
+    if (r.status >= 200 && r.status < 300 && r.data && typeof r.data.allowed === 'boolean') {
+      // One-time refund ticket: stays on the server, never sent to the app.
+      if (r.data.ticket) req._quotaTicket = r.data.ticket;
+      delete r.data.ticket;
+      return r.data;
+    }
   } catch (e) { /* Supabase unreachable: do not block the family */ }
   return { allowed: true };
 }
 
-// The AI call failed: give the scan back so it does not count.
-async function giveBack(req, kind) {
-  try { await rpc('ai_quota_give_back', req, kind); } catch (e) { /* ignore */ }
+// The AI call failed: give that one use back, with the server-only ticket from takeQuota.
+async function giveBack(req) {
+  const ticket = req._quotaTicket;
+  if (!ticket) return;
+  req._quotaTicket = null;
+  try { await rpc('ai_quota_give_back', req, { p_ticket: ticket }); } catch (e) { /* ignore */ }
 }
 
 function limitReply(res, q) {
