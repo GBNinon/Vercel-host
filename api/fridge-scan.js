@@ -5,6 +5,8 @@
 
 // v4 (Sep 2026): strict JSON schema (Structured Outputs) instead of plain JSON mode.
 // v5 (Oct 2026): low reasoning (better recall), 'maybe' only for really unclear items (max 5), shelf-by-shelf search, 60 s limit.
+// v6 (14 Oct 2026): fewer false items (unsure = maybe, not sure list), never a category word as a name
+//    ("vegetable" for spinach), generic names filtered out on the server too, shorter answer = a bit faster.
 
 // Change here if the scan misses too much: 'none' (fastest) -> 'low' -> 'medium'
 const MODEL = 'gpt-6-luna';
@@ -41,8 +43,8 @@ Goal: list every FOOD item a parent could cook with or give to the kids.
 
 Make two lists:
 - "ingredients": every item you can name with reasonable confidence. This is the main list and is usually long.
-- "maybe": ONLY items that are mostly hidden or so blurry that you really cannot tell what they are. Max 5. Use your best guess name.
-When you hesitate between the two lists, put the item in "ingredients": the parent removes a wrong item with one tap, but a missing item is lost. A clear package, jar or carton you can read or recognise by shape and colour (milk carton, egg box, cheese block, butter, yogurt pot) is a sure item, not a maybe.
+- "maybe": items you think you see but are not sure about (partly hidden, blurry, or you cannot tell exactly what it is). Max 8. Use your best guess name.
+Only put an item in "ingredients" when you can really see it and know what it is. If you doubt whether it is there or what it is, it goes in "maybe": the parent ticks it on with one tap, but a wrong item in the main list ends up in the recipes. A clear package, jar or carton you can read or recognise by shape and colour (milk carton, egg box, cheese block, butter, yogurt pot) is a sure item, not a maybe.
 
 How to look: go through the photo systematically, shelf by shelf from top to bottom, then the door shelves, then the drawers. Use the zoomed quarters to read labels and spot small items at the back.
 
@@ -51,7 +53,8 @@ Rules:
 - Food only: fruit, vegetables, herbs, dairy, eggs, meat, fish, bread, leftovers you can identify, sauces, spreads, condiments, jars, pickles.
 - Drinks: only milk, plant milk and yogurt drinks. Skip water, juice, soft drinks and alcohol.
 - Skip non-food and trivia: packaging, wrappers, paper, bags, foil, empty or closed containers you cannot identify, medicine, cosmetics, fridge parts, magnets, toys.
-- Be specific and simple: "Cherry tomatoes", "Greek yogurt", "Grated cheese", not "vegetables" or "dairy".
+- Be specific and simple: "Cherry tomatoes", "Greek yogurt", "Grated cheese".
+- Never use a category word as a name: not "Vegetable", "Vegetables", "Greens", "Fruit", "Herbs", "Sauce", "Dairy", "Meat", "Leftovers" (Dutch: not "Groente", "Fruit", "Kruiden", "Saus", "Zuivel", "Vlees", "Restjes"). Name the actual thing: leaves are "Spinach", "Lettuce", "Rocket" or "Kale". If you cannot tell which one it is, put your best guess in "maybe".
 - Merge duplicates: three yogurt pots is one "Yogurt".
 - No quantities, no brand names ("Chocolate spread", not the brand).
 - No limit on the number of items, but never pad the list.
@@ -156,7 +159,7 @@ module.exports = async function handler(req, res) {
           { role: 'system', content: FRIDGE_SCAN_PROMPT },
           { role: 'user', content },
         ],
-        max_completion_tokens: 2500,
+        max_completion_tokens: 1800,
         response_format: SCAN_SCHEMA,
       },
       {
@@ -184,9 +187,12 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    const ingredients = cleanList(parsed.ingredients, 60);
+    // Category words are never an ingredient (a recipe with "vegetable" in it is no use to anyone)
+    const GENERIC = new Set(['vegetable', 'vegetables', 'veggies', 'greens', 'leafy greens', 'fruit', 'fruits', 'herbs', 'sauce', 'sauces', 'dairy', 'meat', 'fish', 'food', 'leftovers', 'groente', 'groenten', 'bladgroente', 'kruiden', 'saus', 'sauzen', 'zuivel', 'vlees', 'vis', 'eten', 'restjes']);
+    const notGeneric = (x) => !GENERIC.has(String(x || '').trim().toLowerCase());
+    const ingredients = cleanList((parsed.ingredients || []).filter(notGeneric), 60);
     const sureKeys = new Set(ingredients.map((x) => x.toLowerCase()));
-    const maybe = cleanList(parsed.maybe, 10).filter((x) => !sureKeys.has(x.toLowerCase()));
+    const maybe = cleanList((parsed.maybe || []).filter(notGeneric), 10).filter((x) => !sureKeys.has(x.toLowerCase()));
     const notes = typeof parsed.notes === 'string' ? parsed.notes : '';
 
     // "maybe" is new: older app versions simply ignore it.
