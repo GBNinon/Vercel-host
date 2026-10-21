@@ -6,6 +6,10 @@
 // v4 (Sep 2026): strict JSON schema, preferences apart from ingredients, lunch/dinner meals with more flair.
 // v5 (Oct 2026): low reasoning + 60 s function limit; medium reasoning ran past Vercel's 30 s limit (504).
 // v6 (Oct 2026): "dish" describes the whole plate (all visible parts) so the photo matches the recipe.
+// v7 (21 Oct 2026, after an external review): medium reasoning + Fast processing (falls back to low, and to
+//    standard processing / a looser schema if the API refuses), the schema enforces exactly 3 recipes with
+//    5 to 8 steps and max 10 ingredient lines, and two new rules: the fridge ingredients are the heroes, and
+//    every listed ingredient is used in the steps (and the other way round).
 const axios = require('axios');
 const { takeQuota, giveBack, limitReply } = require('./_quota');
 
@@ -30,6 +34,8 @@ RECIPE RULES
 - If a dish uses something unusual as a base, crust, wrap or binder (potato slices, grated potato, cauliflower, bread, tortilla), explain exactly how it holds together. Example for a potato pizza base: slice the potatoes 2 to 3 mm thin, lay them overlapping like roof tiles on baking paper, brush with oil and pre-bake 15 to 20 minutes at 220 degrees until the edges are golden and the slices stick together, only then add the topping. Or mix grated potato with egg and grated cheese so it binds. Never assume things stick together by themselves.
 - Oven dishes: step 1 says to preheat the oven and to what temperature; a later step gives the bake time and the doneness sign.
 - Meat, chicken and fish are always fully cooked; say how to check it in the step.
+- Make the available ingredients the heroes of the recipes. Each recipe uses at least 2 to 3 ingredients from the list when possible. Pantry basics support the dish, they never become the main idea.
+- Final consistency check: every ingredient in the list is actually used in the steps, and every non-pantry ingredient mentioned in the steps is in the ingredient list.
 - Before you answer, check each recipe: does it taste good, is the order logical, are all amounts and times there, and could a parent cook it with only these steps? Fix anything that fails.
 
 PREFERENCES (only when the user message lists them; follow every one given)
@@ -55,6 +61,8 @@ const RECIPE_SCHEMA = {
       properties: {
         recipes: {
           type: 'array',
+          minItems: 3,
+          maxItems: 3,
           items: {
             type: 'object',
             additionalProperties: false,
@@ -64,8 +72,8 @@ const RECIPE_SCHEMA = {
               dish: { type: 'string' },
               why: { type: 'string' },
               time: { type: 'string' },
-              ingredients: { type: 'array', items: { type: 'string' } },
-              steps: { type: 'array', items: { type: 'string' } },
+              ingredients: { type: 'array', maxItems: 10, items: { type: 'string' } },
+              steps: { type: 'array', minItems: 5, maxItems: 8, items: { type: 'string' } },
             },
           },
         },
@@ -102,26 +110,50 @@ module.exports = async function handler(req, res) {
   if (!q.allowed) return limitReply(res, q);
 
   try {
-    const response = await axios.post(
+    // v7: try medium reasoning with Fast processing first; if that is refused or too slow, fall back step by step.
+    // A looser copy of the schema (no min/max) is only used when the API rejects the strict one.
+    const LOOSE_SCHEMA = JSON.parse(JSON.stringify(RECIPE_SCHEMA, (k, v) => (k === 'minItems' || k === 'maxItems' ? undefined : v)));
+    const started = Date.now();
+    const call = (effort, fast, schema, timeout) => axios.post(
       'https://api.openai.com/v1/chat/completions',
-      {
+      Object.assign({
         model: 'gpt-6-luna',
-        reasoning_effort: 'low',
+        reasoning_effort: effort,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userMsg },
         ],
         max_completion_tokens: 3500,
-        response_format: RECIPE_SCHEMA,
-      },
+        response_format: schema,
+      }, fast ? { service_tier: 'fast' } : {}),
       {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         },
-        timeout: 52000,
+        timeout,
       }
     );
+    const refused = (e) => e?.response?.status === 400;
+    const left = () => Math.max(5000, 55000 - (Date.now() - started));
+    let response;
+    let fast = true;
+    let schema = RECIPE_SCHEMA;
+    try {
+      response = await call('medium', fast, schema, 36000);
+    } catch (e1) {
+      if (refused(e1)) {
+        const m = String(e1?.response?.data?.error?.message || '');
+        console.error('Recipes: request refused, retrying simpler:', m);
+        if (/service_tier/i.test(m)) fast = false; else if (/schema|minItems|maxItems/i.test(m)) schema = LOOSE_SCHEMA; else { fast = false; schema = LOOSE_SCHEMA; }
+        try { response = await call('medium', fast, schema, Math.min(36000, left())); }
+        catch (e2) { response = await call('low', false, LOOSE_SCHEMA, left()); }
+      } else {
+        // too slow or busy: the fast, low-reasoning version still fits in the 60 s limit
+        console.error('Recipes: medium failed, falling back to low:', e1?.message);
+        response = await call('low', fast, schema, left());
+      }
+    }
 
     const text = response.data?.choices?.[0]?.message?.content || '{}';
     let parsed;
