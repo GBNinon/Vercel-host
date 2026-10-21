@@ -18,6 +18,9 @@
 //      Swedish or German. Safety net: names with ae/o-slash/a-ring letters or typical Scandinavian/German
 //      food words get one small fast text call that translates only those names; what still looks wrong is dropped.
 //    - Old app versions without tiles keep the single request with the whole photo at high detail.
+// v8 (21 Oct 2026, after an external review): Fast processing (service_tier 'fast', falls back to standard if
+//    refused), stricter sure list (shape/colour guesses go to "maybe", never infer food behind opaque things),
+//    vague names ("Packaged food, unclear") dropped, and "partial": true when a quarter could not be scanned.
 
 // Change here if the scan misses too much: 'none' (fastest) -> 'low' -> 'medium'
 const MODEL = 'gpt-6-luna';
@@ -60,9 +63,11 @@ Goal: list every FOOD item a parent could cook with or give to the kids. Missing
 Make two lists:
 - "ingredients": every item you can name with reasonable confidence. This is the main list and is usually long.
 - "maybe": items you think you see but are not sure about (partly hidden, blurry, or you cannot tell exactly what it is). Max 8. Use your best guess name.
-Only put an item in "ingredients" when you can really see it and know what it is. If you doubt whether it is there or what it is, it goes in "maybe": the parent ticks it on with one tap, but a wrong item in the main list ends up in the recipes. A clear package, jar or carton you can read or recognise by shape and colour (milk carton, egg box, cheese block, butter, yogurt pot) is a sure item, not a maybe.
+Only put an item in "ingredients" when you can really see it and know what it is. If you doubt whether it is there or what it is, it goes in "maybe": the parent removes a wrong maybe with one tap, but a wrong item in the main list ends up in the recipes. Never write vague names like "Packaged food", "Unclear item" or "Something in a jar": leave such things out.
 
-How to look: go through the image systematically, shelf by shelf from top to bottom and left to right, then the door shelves, then the drawers and boxes. Look behind the front row and through transparent boxes, bags and drawers. Read every label you can (any language on the label is fine, but write the name in the requested language). Recognise partly hidden packaging by shape, colour and lid: egg boxes, cheese, butter, yogurt pots, cream, milk cartons, jars, tubs, cold cuts, meat and fish packs. Count small things too: herbs, lemons, a single pepper, a pot of olives.
+How to look: go through the image systematically, shelf by shelf from top to bottom and left to right, then the door shelves, then the drawers and boxes. Inspect every visible area carefully, including gaps between items, transparent containers, bags and drawers, and partially visible packages. Do not infer food hidden behind opaque objects. Read every label you can (any language on the label is fine, but write the name in the requested language). Count small things too: herbs, lemons, a single pepper, a pot of olives.
+
+For "ingredients", require clear visual evidence: the food itself is recognisable, the label is readable, or the package is so distinctive that you are highly confident (an egg box, a milk carton). If the identification depends mainly on package shape, colour or a partly hidden label, put it in "maybe" instead.
 
 Rules:
 - Only list what is visible in THIS photo. Never add items just because fridges usually have them. If you cannot see it, leave it out.
@@ -132,7 +137,21 @@ function parseJson(text) {
   }
 }
 
+// v8: Fast processing for the scan. If the API refuses the service tier, it is switched off for this instance.
+let FAST_OK = true;
 async function askOpenAI(body, timeout) {
+  if (FAST_OK && body.model === MODEL) {
+    try {
+      return await postOpenAI(Object.assign({}, body, { service_tier: 'fast' }), timeout);
+    } catch (e) {
+      const m = String(e?.response?.data?.error?.message || '');
+      if (e?.response?.status === 400 && /service_tier|tier/i.test(m)) { FAST_OK = false; console.error('Fast tier refused, using standard:', m); }
+      else throw e;
+    }
+  }
+  return postOpenAI(body, timeout);
+}
+async function postOpenAI(body, timeout) {
   const response = await axios.post('https://api.openai.com/v1/chat/completions', body, {
     headers: {
       'Content-Type': 'application/json',
@@ -358,14 +377,16 @@ module.exports = async function handler(req, res) {
 
     // Category words are never an ingredient (a recipe with "vegetable" in it is no use to anyone)
     const GENERIC = new Set(['vegetable', 'vegetables', 'veggies', 'greens', 'leafy greens', 'fruit', 'fruits', 'herbs', 'sauce', 'sauces', 'dairy', 'meat', 'fish', 'food', 'leftovers', 'groente', 'groenten', 'bladgroente', 'kruiden', 'saus', 'sauzen', 'zuivel', 'vlees', 'vis', 'eten', 'restjes']);
-    const notGeneric = (x) => !GENERIC.has(String(x || '').trim().toLowerCase());
+    const VAGUE = /(unclear|unknown|unidentified|onduidelijk|onbekend|niet herkenbaar|packaged food|verpakt eten|verpakte producten|something|iets in)/i;
+    const notGeneric = (x) => !GENERIC.has(String(x || '').trim().toLowerCase()) && !VAGUE.test(String(x || ''));
     const ingredients = cleanList((parsed.ingredients || []).filter(notGeneric), 60);
     const sureKeys = new Set(ingredients.map((x) => x.toLowerCase()));
     const maybe = cleanList((parsed.maybe || []).filter(notGeneric), 10).filter((x) => !sureKeys.has(x.toLowerCase()));
     const notes = typeof parsed.notes === 'string' ? parsed.notes : '';
 
     // "maybe" is new: older app versions simply ignore it.
-    return res.status(200).json({ ingredients, maybe, notes });
+    // v8: tell the app when a quarter could not be scanned, so it can ask for a quick check
+    return res.status(200).json({ ingredients, maybe, notes, partial: !!(tiles.length && results.length < tiles.length) });
 
   } catch (error) {
     if (counted) await giveBack(req, 'fridge_scan');
