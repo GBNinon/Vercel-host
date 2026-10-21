@@ -5,6 +5,7 @@
 // Every later request for the same dish name is served from Cloudinary for free.
 // v4 (Oct 2026): photo prompt = full plate description + the recipe's own main ingredients (true to the recipe),
 //   cache key includes those ingredients, JPEG output (smaller, faster upload), 60 s limit.
+// v5 (21 Oct 2026): medium quality; the plate description decides what is on the photo (no flour or stock on the plate).
 //
 // NEEDS THESE ENVIRONMENT VARIABLES IN VERCEL (Settings -> Environment Variables):
 //   OPENAI_API_KEY        (already there)
@@ -18,7 +19,7 @@ const crypto = require('crypto');
 
 // 'low' = about half a cent per new photo. 'medium' looks more real and costs more,
 // but only the first time a dish is made; after that Cloudinary serves it for free.
-const PHOTO_QUALITY = 'low';
+const PHOTO_QUALITY = 'medium';   // v5 (21 Oct 2026): medium, every dish is drawn once and then cached
 
 function slugify(name) {
   return String(name).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -37,10 +38,13 @@ function mainIngredients(list) {
     .join(', ');
 }
 
-function buildPrompt(name, ingredients) {
-  const made = mainIngredients(ingredients);
-  return 'Realistic, appetizing photo of this home-cooked family dish: ' + String(name).slice(0, 220) +
-    (made ? '. It is made with: ' + made + '. Show these ingredients visibly on the plate and nothing that is not in this list' : '') + '. ' +
+// v5 (21 Oct 2026): the plate description ("dish" from recipes.js) is the authority for what is visible.
+// The ingredient list is only used for old app versions that send no dish (it holds flour, stock, butter...).
+function buildPrompt(name, ingredients, hasDish) {
+  const made = hasDish ? '' : mainIngredients(ingredients);
+  return 'Realistic, appetizing photo of exactly this finished family dish: ' + String(name).slice(0, 220) + '. ' +
+    (hasDish ? 'Show the visible components described above. Do not add garnish, side dishes or ingredients that are not described. '
+      : (made ? 'It is made with: ' + made + '. Show only what you would see on the plate. ' : '')) +
     'Show the real, recognisable dish and ignore playful words in the name (like monster, dino, volcano, rainbow). ' +
     'Freshly made and delicious, like a photo in a modern family cookbook: simple white ceramic plate or bowl on a light wooden kitchen table, ' +
     'soft natural window light, 45 degree angle, shallow depth of field, realistic textures and natural colours, neat portion. ' +
@@ -92,7 +96,7 @@ module.exports = async function handler(req, res) {
     // 2. Generate at the lowest cost setting.
     const body = {
       model: 'gpt-image-2.5-flare', // fast everyday model; gpt-image-1 is switched off on Oct 23, 2026
-      prompt: buildPrompt(photoKey, ingredients),
+      prompt: buildPrompt(photoKey, ingredients, !!(dish && String(dish).trim().length > 2)),
       size: '1536x1024',
       quality: PHOTO_QUALITY,
       output_format: 'jpeg',
