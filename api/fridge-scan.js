@@ -27,9 +27,13 @@ const MODEL = 'gpt-6-luna';
 const REASONING = 'low';
 // The small name-translation call (safety net) needs no thinking at all.
 const FIX_REASONING = 'none';
+// v9 (22 Oct 2026, after a second external review): a fifth crop for the bottom drawer (full width,
+//    bottom 30%, sent by app v0.64+ as tile4) with its own close-up prompt, a meat-and-fish rule (visible
+//    but uncertain meat goes to "maybe", it never disappears), food seen through clear drawers counts as
+//    visible, and the Dutch language check no longer drops "Bratwurst" (the German word "wurst" is gone).
 const TILE_TIMEOUT_MS = 26000; // one OpenAI request (whole run must stay under the 60 s Vercel limit)
 const FIX_TIMEOUT_MS = 8000;
-const NAMES = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+const NAMES = ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'bottom drawer'];
 const multer = require('multer');
 const axios = require('axios');
 const { takeQuota, giveBack, limitReply } = require('./_quota');
@@ -48,12 +52,16 @@ function runMulter(req, res) {
       { name: 'image', maxCount: 1 },
       { name: 'tile0', maxCount: 1 }, { name: 'tile1', maxCount: 1 },
       { name: 'tile2', maxCount: 1 }, { name: 'tile3', maxCount: 1 },
+      { name: 'tile4', maxCount: 1 },   // v9: the bottom drawer close-up
     ])(req, res, (err) => {
       if (err) reject(err);
       else resolve();
     });
   });
 }
+
+// v9: the text that goes with the bottom drawer close-up (tile4)
+const DRAWER_LINE = 'A close-up of the bottom of the same photo, usually the bottom fridge drawer. Inspect every visible food item in it carefully, also through the clear plastic front. For meat and fish, name the visible form as specifically as you can (steak, hamburgers, sausages, smoked sausage, bratwurst, cold cuts, chicken breast, bacon, salmon). If meat is clearly visible but the exact type is uncertain, do not leave it out: put your most useful best guess in "maybe". List the food you can see in THIS part:';
 
 const FRIDGE_SCAN_PROMPT = `You are FoodAI, the fridge helper of a family app.
 You get one photo of a fridge (or pantry or kitchen counter). Often you get one zoomed-in part of that photo (a quarter) plus the whole photo at low resolution for orientation: then list ONLY the food you can see in the zoomed part (items cut off at its edge count too). Other parts of the fridge are checked separately, so do not list things you only see in the small whole photo.
@@ -62,12 +70,14 @@ Goal: list every FOOD item a parent could cook with or give to the kids. Missing
 
 Make two lists:
 - "ingredients": every item you can name with reasonable confidence. This is the main list and is usually long.
-- "maybe": items you think you see but are not sure about (partly hidden, blurry, or you cannot tell exactly what it is). Max 8. Use your best guess name.
+- "maybe": items you think you see but are not sure about (partly hidden, blurry, or you cannot tell exactly what it is). Max 10. Use your best guess name.
 Only put an item in "ingredients" when you can really see it and know what it is. If you doubt whether it is there or what it is, it goes in "maybe": the parent removes a wrong maybe with one tap, but a wrong item in the main list ends up in the recipes. Never write vague names like "Packaged food", "Unclear item" or "Something in a jar": leave such things out.
 
-How to look: go through the image systematically, shelf by shelf from top to bottom and left to right, then the door shelves, then the drawers and boxes. Inspect every visible area carefully, including gaps between items, transparent containers, bags and drawers, and partially visible packages. Do not infer food hidden behind opaque objects. Read every label you can (any language on the label is fine, but write the name in the requested language). Count small things too: herbs, lemons, a single pepper, a pot of olives.
+How to look: go through the image systematically, shelf by shelf from top to bottom and left to right, then the door shelves, then the drawers and boxes. Inspect every visible area carefully, including gaps between items, transparent containers, bags and drawers, and partially visible packages. Food you can see through a clear drawer, box, tray or plastic wrap counts as visible. Do not infer food hidden behind opaque objects. Read every label you can (any language on the label is fine, but write the name in the requested language). Count small things too: herbs, lemons, a single pepper, a pot of olives.
 
 For "ingredients", require clear visual evidence: the food itself is recognisable, the label is readable, or the package is so distinctive that you are highly confident (an egg box, a milk carton). If the identification depends mainly on package shape, colour or a partly hidden label, put it in "maybe" instead.
+
+MEAT AND FISH: inspect trays, transparent drawers and wrapped packs carefully. Name the visible form as specifically as you can: steak, burger patties (hamburgers), minced meat, chicken breast, pork chop, bacon, ham, cold cuts, salami, bratwurst, smoked sausage (in Dutch: rookworst), regular sausages, salmon, white fish. Do not leave out clearly visible meat or fish just because the exact cut or type is uncertain: put your most useful best guess in "maybe" (for example "Steak" or "Hamburgers"), never the word "Meat".
 
 Rules:
 - Only list what is visible in THIS photo. Never add items just because fridges usually have them. If you cannot see it, leave it out.
@@ -236,7 +246,7 @@ function mergeResults(results, lang) {
 // Safety net: names that are clearly not Dutch (or not English). Danish/Norwegian letters always;
 // for Dutch also common Danish, Swedish and German food words.
 const FOREIGN_CHARS = /[\u00e6\u00f8\u00e5\u00c6\u00d8\u00c5]/;
-const FOREIGN_WORDS_NL = /\b(ost|kylling|skinke|agurk|agurker|tomater|kartofler|leverpostej|rugbrod|flode|gurka|skinka|kyckling|potatis|morot|milch|sahne|schinken|gurke|gurken|wurst|zwiebel|zwiebeln|kartoffel|kartoffeln|karotten|hackfleisch|frischkase|joghurt)\b/i;
+const FOREIGN_WORDS_NL = /\b(ost|kylling|skinke|agurk|agurker|tomater|kartofler|leverpostej|rugbrod|flode|gurka|skinka|kyckling|potatis|morot|milch|sahne|schinken|gurke|gurken|zwiebel|zwiebeln|kartoffel|kartoffeln|karotten|hackfleisch|frischkase|joghurt)\b/i;
 function looksForeign(name, lang) {
   const s = String(name || '');
   if (FOREIGN_CHARS.test(s)) return true;
@@ -336,7 +346,7 @@ module.exports = async function handler(req, res) {
     counted = true;
 
     const lang = (req.body && req.body.lang === 'nl') ? 'nl' : 'en';
-    const tiles = ['tile0', 'tile1', 'tile2', 'tile3']
+    const tiles = ['tile0', 'tile1', 'tile2', 'tile3', 'tile4']
       .map((k, i) => { const f = files[k] && files[k][0]; if (f) f._i = i; return f; })
       .filter((f) => f && f.buffer);
 
@@ -353,7 +363,7 @@ module.exports = async function handler(req, res) {
       const settled = await Promise.allSettled(tiles.map((t) => withRetry(() => askOpenAI(scanBody([
         { type: 'text', text: langLine + '\nThe whole fridge photo, only for orientation:' },
         { type: 'image_url', image_url: { url: mainUrl, detail: 'low' } },
-        { type: 'text', text: 'The zoomed-in ' + (NAMES[t._i] || 'part') + ' part of the same photo. List the food you can see in THIS part:' },
+        { type: 'text', text: t._i === 4 ? DRAWER_LINE : 'The zoomed-in ' + (NAMES[t._i] || 'part') + ' part of the same photo. List the food you can see in THIS part:' },
         { type: 'image_url', image_url: { url: toDataUrl(t), detail: 'high' } },
         { type: 'text', text: ask },
       ]), timeLeft(TILE_TIMEOUT_MS, deadline)), deadline)));
@@ -381,7 +391,7 @@ module.exports = async function handler(req, res) {
     const notGeneric = (x) => !GENERIC.has(String(x || '').trim().toLowerCase()) && !VAGUE.test(String(x || ''));
     const ingredients = cleanList((parsed.ingredients || []).filter(notGeneric), 60);
     const sureKeys = new Set(ingredients.map((x) => x.toLowerCase()));
-    const maybe = cleanList((parsed.maybe || []).filter(notGeneric), 10).filter((x) => !sureKeys.has(x.toLowerCase()));
+    const maybe = cleanList((parsed.maybe || []).filter(notGeneric), 12).filter((x) => !sureKeys.has(x.toLowerCase()));
     const notes = typeof parsed.notes === 'string' ? parsed.notes : '';
 
     // "maybe" is new: older app versions simply ignore it.
