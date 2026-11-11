@@ -135,6 +135,7 @@ function cleanList(arr, max) {
 const LANG_LINE = {
   nl: 'LANGUAGE: Dutch (Nederlands, as spoken in the Netherlands). Write every name in Dutch. Never Danish, Norwegian, Swedish or German.',
   en: 'LANGUAGE: English. Write every name in English.',
+  es: 'LANGUAGE: Spanish (español, as spoken in Spain). Write every name in Spanish, the everyday word a Spanish parent uses ("Tomates cherry", "Yogur griego", "Queso rallado", "Zanahorias").',
 };
 
 function parseJson(text) {
@@ -212,7 +213,7 @@ function itemKey(name, lang) {
   let last = words.pop() || '';
   if (last.length > 3) {
     last = last.replace(/oes$/, 'o');
-    last = lang === 'nl' ? last.replace(/(s|en)$/, '') : last.replace(/s$/, '');
+    last = lang === 'nl' ? last.replace(/(s|en)$/, '') : lang === 'es' ? last.replace(/(es|s)$/, '') : last.replace(/s$/, '');
   }
   return words.concat(last).join(' ');
 }
@@ -345,7 +346,7 @@ module.exports = async function handler(req, res) {
     if (!q.allowed) return limitReply(res, q);
     counted = true;
 
-    const lang = (req.body && req.body.lang === 'nl') ? 'nl' : 'en';
+    const lang = (req.body && (req.body.lang === 'nl' || req.body.lang === 'es')) ? req.body.lang : 'en';
     const tiles = ['tile0', 'tile1', 'tile2', 'tile3', 'tile4']
       .map((k, i) => { const f = files[k] && files[k][0]; if (f) f._i = i; return f; })
       .filter((f) => f && f.buffer);
