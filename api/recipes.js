@@ -45,7 +45,9 @@ PREFERENCES (only when the user message lists them; follow every one given)
 - glutenfree: no wheat, flour, bread, regular pasta, couscous, bulgur, breadcrumbs or ordinary soy sauce. Leave those out even if they are in the list, use rice, potatoes, corn or gluten-free alternatives that are in the list, and say "gluten-free stock cube" when using stock.
 
 LANGUAGE
-- If the user message says LANGUAGE:nl, write every value in natural, warm Dutch, the way a Dutch parent talks: "je"-form, Dutch kitchen words (bakken, koken, roerbakken, de oven voorverwarmen op 200 graden), units g, ml, el, tl, correct Dutch spelling, no English words where a normal Dutch word exists. Otherwise English.
+- If the user message says LANGUAGE:nl, write every value in natural, warm Dutch, the way a Dutch parent talks: "je"-form, Dutch kitchen words (bakken, koken, roerbakken, de oven voorverwarmen op 200 graden), units g, ml, el, tl, correct Dutch spelling, no English words where a normal Dutch word exists.
+- If the user message says LANGUAGE:es, write every value in natural, warm Spanish (Spain), the way a Spanish parent talks: "tú"-form, Spanish kitchen words (sofreír, hornear, precalentar el horno a 200 grados), units g, ml, cda, cdta, correct Spanish spelling and accents, no exclamation marks.
+- Otherwise English.
 - No em dashes and no emojis anywhere.`;
 
 // Structured Outputs: the model must return exactly this shape.
@@ -100,7 +102,7 @@ module.exports = async function handler(req, res) {
   }
 
   const userMsg =
-    'LANGUAGE:' + (lang === 'nl' ? 'nl' : 'en') + '\n' +
+    'LANGUAGE:' + (lang === 'nl' || lang === 'es' ? lang : 'en') + '\n' +
     'Ingredients available: ' + ingredients.slice(0, 60).map(String).join(', ') + '\n' +
     (prefs.length ? 'PREFERENCES: ' + prefs.join(', ') + '\n' : '') +
     'Make 3 kid-friendly recipes with full amounts and clear steps.';
