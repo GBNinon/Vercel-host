@@ -18,6 +18,14 @@ function who(req) {
   return { token, device };
 }
 
+// Nov 2026: Ibiza Families sends app: 'ibiza' in the body. Its use is counted in the Ibiza
+// tables (ibz_ai_usage / ibz_ai_tickets via ibz_ai_quota_take / ibz_ai_quota_give_back).
+// Everything else (Amsterdam, old apps) keeps the Amsterdam functions, exactly as before.
+function isIbiza(req) {
+  return !!(req && req.body && String(req.body.app || '').toLowerCase() === 'ibiza');
+}
+function fnName(req, base) { return isIbiza(req) ? 'ibz_' + base : base; }
+
 async function rpc(fn, req, body) {
   const { token } = who(req);
   const r = await axios.post(
@@ -45,11 +53,11 @@ async function takeQuota(req, kind) {
   }
   try {
     const body = { p_kind: kind, p_device: device || null };
-    let r = await rpc('ai_quota_take', req, body);
+    let r = await rpc(fnName(req, 'ai_quota_take'), req, body);
     if (r.status === 401 && token) {
       // expired login token: count on the device instead
       req.headers['authorization'] = '';
-      r = await rpc('ai_quota_take', req, body);
+      r = await rpc(fnName(req, 'ai_quota_take'), req, body);
     }
     if (r.status >= 200 && r.status < 300 && r.data && typeof r.data.allowed === 'boolean') {
       // One-time refund ticket: stays on the server, never sent to the app.
@@ -66,7 +74,7 @@ async function giveBack(req) {
   const ticket = req._quotaTicket;
   if (!ticket) return;
   req._quotaTicket = null;
-  try { await rpc('ai_quota_give_back', req, { p_ticket: ticket }); } catch (e) { /* ignore */ }
+  try { await rpc(fnName(req, 'ai_quota_give_back'), req, { p_ticket: ticket }); } catch (e) { /* ignore */ }
 }
 
 function limitReply(res, q) {
