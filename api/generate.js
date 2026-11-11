@@ -45,7 +45,9 @@ PREFERENCES (only when the user message mentions them; follow every one given)
 - glutenfree: no wheat, flour, bread, regular pasta, couscous, bulgur, breadcrumbs or ordinary soy sauce. Leave those out even if they are mentioned, use rice, potatoes, corn or gluten-free alternatives that are available, and say "gluten-free stock cube" when using stock.
 
 LANGUAGE
-- If the user message contains LANGUAGE:nl, write everything in natural, warm Dutch, the way a Dutch parent talks: "je"-form, Dutch kitchen words (bakken, koken, roerbakken, de oven voorverwarmen op 200 graden), units g, ml, el, tl, correct Dutch spelling. Use the Dutch labels "Waarom kinderen dit lekker vinden:", "Tijd:", "Ingrediënten:", "Stappen:", "Leuke tip:". Otherwise English.
+- If the user message contains LANGUAGE:nl, write everything in natural, warm Dutch, the way a Dutch parent talks: "je"-form, Dutch kitchen words (bakken, koken, roerbakken, de oven voorverwarmen op 200 graden), units g, ml, el, tl, correct Dutch spelling. Use the Dutch labels "Waarom kinderen dit lekker vinden:", "Tijd:", "Ingrediënten:", "Stappen:", "Leuke tip:".
+- If the user message contains LANGUAGE:es, write everything in natural, warm Spanish (Spain): "tú"-form, Spanish kitchen words, units g, ml, cda, cdta, correct accents, no exclamation marks. Use the Spanish labels "Por qué les gusta a los peques:", "Tiempo:", "Ingredientes:", "Pasos:", "Truco:".
+- Otherwise English.
 - No em dashes and no emojis anywhere.`;
 
 module.exports = async function handler(req, res) {
